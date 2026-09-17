@@ -1,0 +1,256 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  password  String?
+  avatar    String?
+  role      String   @default("user")
+  apiKey    String?
+  bio       String?
+  timezone  String   @default("UTC")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accounts       SocialAccount[]
+  posts          Post[]
+  notifications  Notification[]
+  settings       UserSettings?
+  apiKeys        ApiKey[]
+  campaigns      Campaign[]
+  competitors    Competitor[]
+  hashtagSets    HashtagSet[]
+  trendResults   TrendResult[]
+  copyrightContents CopyrightContent[]
+  mediaProjects  MediaProject[]
+}
+
+model SocialAccount {
+  id          String   @id @default(cuid())
+  userId      String
+  platform    String
+  username    String
+  displayName String?
+  avatar      String?
+  accessToken String?
+  followers   Int      @default(0)
+  following   Int      @default(0)
+  isActive    Boolean  @default(true)
+  autoPost    Boolean  @default(false)
+  connectedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user  User   @relation(fields: [userId], references: [id])
+  posts Post[]
+}
+
+model Post {
+  id          String   @id @default(cuid())
+  userId      String
+  accountId   String?
+  platforms   String
+  content     String
+  mediaUrl    String?
+  mediaType   String?
+  status      String   @default("draft")
+  scheduledAt DateTime?
+  publishedAt DateTime?
+  likes       Int      @default(0)
+  comments    Int      @default(0)
+  shares      Int      @default(0)
+  views       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user         User           @relation(fields: [userId], references: [id])
+  account      SocialAccount? @relation(fields: [accountId], references: [id])
+  tags         PostTag[]
+  postComments Comment[]
+}
+
+model PostTag {
+  id     String @id @default(cuid())
+  postId String
+  tag    String
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  postId    String
+  author    String
+  avatar    String?
+  content   String
+  platform  String
+  isRead    Boolean  @default(false)
+  isReplied Boolean  @default(false)
+  reply     String?
+  sentiment String?
+  archived  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+}
+
+model Campaign {
+  id           String   @id @default(cuid())
+  userId       String?
+  name         String
+  type         String
+  platforms    String
+  targetCount  Int      @default(100)
+  currentCount Int      @default(0)
+  status       String   @default("active")
+  rules        String?
+  startedAt    DateTime @default(now())
+  endedAt      DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model MediaProject {
+  id          String   @id @default(cuid())
+  userId      String?
+  name        String
+  type        String   @default("video")
+  sourceUrl   String?
+  duration    Float?
+  status      String   @default("editing")
+  thumbnail   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Competitor {
+  id             String   @id @default(cuid())
+  userId         String?
+  name           String
+  platform       String
+  handle         String
+  followers      Int      @default(0)
+  following      Int      @default(0)
+  postsWeek      Int      @default(0)
+  engagementRate Float    @default(0)
+  growthRate     Float    @default(0)
+  avgLikes       Int      @default(0)
+  bestTime       String?
+  isTracking     Boolean  @default(true)
+  isEstimated    Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model CopyrightContent {
+  id          String            @id @default(cuid())
+  userId      String?
+  name        String
+  type        String
+  fingerprint String?
+  sourceUrl   String?
+  status      String            @default("registered")
+  lastScanned DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  matches     CopyrightMatch[]
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model CopyrightMatch {
+  id         String           @id @default(cuid())
+  contentId  String
+  matchedUrl String
+  platform   String
+  similarity Float
+  status     String           @default("pending")
+  createdAt  DateTime         @default(now())
+  content    CopyrightContent @relation(fields: [contentId], references: [id], onDelete: Cascade)
+}
+
+model HashtagSet {
+  id        String   @id @default(cuid())
+  userId    String?
+  name      String
+  hashtags  String
+  reach     Int?
+  platform  String?
+  createdAt DateTime @default(now())
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model TrendResult {
+  id         String   @id @default(cuid())
+  userId     String?
+  query      String
+  results    String
+  platform   String?
+  createdAt  DateTime @default(now())
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  link      String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model ScheduledJob {
+  id        String   @id @default(cuid())
+  type      String
+  payload   String
+  runAt     DateTime
+  status    String   @default("pending")
+  result    String?
+  createdAt DateTime @default(now())
+}
+
+model UserSettings {
+  id                      String   @id @default(cuid())
+  userId                  String   @unique
+  emailNotifications      Boolean  @default(true)
+  pushNotifications       Boolean  @default(true)
+  postPublishedNotify     Boolean  @default(true)
+  commentAlerts           Boolean  @default(true)
+  campaignCompletion      Boolean  @default(true)
+  weeklyAnalyticsDigest   Boolean  @default(true)
+  trendAlerts             Boolean  @default(false)
+  theme                   String   @default("system")
+  compactMode             Boolean  @default(false)
+  sidebarDefaultExpanded  Boolean  @default(true)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ApiKey {
+  id        String   @id @default(cuid())
+  userId    String
+  label     String
+  key       String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
