@@ -83,6 +83,26 @@ export const authOptions: NextAuthOptions = {
   session: {
     strategy: 'jwt',
   },
+  // Cookie policy: the app is often served behind an HTTPS proxy and embedded
+  // in a preview iframe (cross-site context). Default SameSite=Lax cookies are
+  // withheld on in-frame fetches, which silently drops the session and bounces
+  // the user back to /auth/login after a successful sign-in. SameSite=None +
+  // Secure keeps auth working embedded AND top-level. (Secure cookies are
+  // accepted on http://localhost too — browsers treat it as a secure context.)
+  cookies: {
+    sessionToken: {
+      name: 'next-auth.session-token',
+      options: { httpOnly: true, sameSite: 'none', path: '/', secure: true },
+    },
+    callbackUrl: {
+      name: 'next-auth.callback-url',
+      options: { httpOnly: true, sameSite: 'none', path: '/', secure: true },
+    },
+    csrfToken: {
+      name: 'next-auth.csrf-token',
+      options: { httpOnly: true, sameSite: 'none', path: '/', secure: true },
+    },
+  },
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
