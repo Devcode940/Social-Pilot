@@ -243,14 +243,19 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   <Settings className="mr-2 size-4" />
                   Settings
                 </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onClick={() => signOut({ callbackUrl: '/auth/login' })}
-                >
-                  <LogOut className="mr-2 size-4" />
-                  Log out
-                </DropdownMenuItem>
+                {/* Hidden in demo mode — there is no login, so no logout. */}
+                {!bypassed && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={() => signOut({ callbackUrl: '/auth/login' })}
+                    >
+                      <LogOut className="mr-2 size-4" />
+                      Log out
+                    </DropdownMenuItem>
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </SidebarMenuItem>
