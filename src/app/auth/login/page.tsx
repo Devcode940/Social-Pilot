@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { signIn } from 'next-auth/react'
+import { isBypassMode } from '@/lib/bypass'
 import { Zap, Eye, EyeOff } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -18,6 +19,12 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+
+  // Temporary demo mode: logins are disabled, go straight to the app.
+  useEffect(() => {
+    if (isBypassMode()) router.replace('/')
+  }, [router])
+  if (isBypassMode()) return null
 
   const fillDemoCredentials = () => {
     setEmail('demo@socialtool.com')

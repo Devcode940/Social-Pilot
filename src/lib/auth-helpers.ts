@@ -9,11 +9,37 @@ export interface SessionUser {
 }
 
 /**
+ * Temporary demo mode: when AUTH_BYPASS=true (dev only — never honored in
+ * production), auth is skipped app-wide and requests act as the demo user.
+ * Remove the flag to restore normal logins. See src/lib/bypass.ts.
+ */
+export function isAuthBypassed(): boolean {
+  return (
+    process.env.AUTH_BYPASS === 'true' &&
+    process.env.NODE_ENV !== 'production'
+  )
+}
+
+/** Demo user for bypass mode (falls back to the oldest user). Null when the DB has no users (seed first). */
+async function getBypassUser(): Promise<SessionUser | null> {
+  const select = { id: true, email: true, role: true }
+  const user =
+    (await db.user.findUnique({
+      where: { email: 'demo@socialtool.com' },
+      select,
+    })) ?? (await db.user.findFirst({ select, orderBy: { createdAt: 'asc' } }))
+  if (!user) return null
+  return { id: user.id, email: user.email, role: user.role }
+}
+
+/**
  * Returns the currently authenticated user (from the NextAuth session),
  * or null when there is no valid session / the user no longer exists.
  * Use this at the top of every protected API route — never `findFirst()`.
  */
 export async function requireUser(): Promise<SessionUser | null> {
+  if (isAuthBypassed()) return getBypassUser()
+
   const session = await getServerSession(authOptions)
   const email = session?.user?.email
   if (!email) return null

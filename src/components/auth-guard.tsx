@@ -3,16 +3,22 @@
 import { useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
+import { isBypassMode } from '@/lib/bypass'
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession()
   const router = useRouter()
 
   useEffect(() => {
-    if (status === 'unauthenticated') {
+    if (!isBypassMode() && status === 'unauthenticated') {
       router.replace('/auth/login')
     }
   }, [status, router])
+
+  // Temporary demo mode: no login required, render straight through.
+  if (isBypassMode()) {
+    return <>{children}</>
+  }
 
   if (status === 'loading') {
     return (

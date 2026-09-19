@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { isBypassMode } from '@/lib/bypass'
 import { Zap, Eye, EyeOff } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -20,6 +21,12 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+
+  // Temporary demo mode: logins are disabled, go straight to the app.
+  useEffect(() => {
+    if (isBypassMode()) router.replace('/')
+  }, [router])
+  if (isBypassMode()) return null
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

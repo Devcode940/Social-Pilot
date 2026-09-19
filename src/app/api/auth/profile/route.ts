@@ -1,17 +1,16 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { requireUser } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
 
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions)
-    if (!session?.user?.email) {
+    const me = await requireUser()
+    if (!me) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const user = await db.user.findUnique({
-      where: { email: session.user.email },
+      where: { id: me.id },
       select: { id: true, name: true, email: true, bio: true, timezone: true, role: true, apiKey: true, createdAt: true },
     })
 
@@ -28,8 +27,8 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   try {
-    const session = await getServerSession(authOptions)
-    if (!session?.user?.email) {
+    const me = await requireUser()
+    if (!me) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -37,7 +36,7 @@ export async function PATCH(request: Request) {
     const { name, bio, timezone } = body
 
     const user = await db.user.update({
-      where: { email: session.user.email },
+      where: { id: me.id },
       data: {
         ...(name !== undefined && { name }),
         ...(bio !== undefined && { bio }),

@@ -50,6 +50,7 @@ import {
 import { useState, useEffect } from 'react'
 import { useAppStore, type Page } from '@/lib/store'
 import { useSession, signOut } from 'next-auth/react'
+import { isBypassMode } from '@/lib/bypass'
 
 const mainNav: { label: string; page: Page; icon: React.ElementType }[] = [
   { label: 'Dashboard', page: 'dashboard', icon: LayoutDashboard },
@@ -141,8 +142,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { data: session } = useSession()
   const isExpanded = state === 'expanded'
 
-  const userName = session?.user?.name || 'User'
-  const userEmail = session?.user?.email || ''
+  const bypassed = isBypassMode()
+  const userName = session?.user?.name || (bypassed ? 'Demo User' : 'User')
+  const userEmail = session?.user?.email || (bypassed ? 'demo@socialtool.com' : '')
   const userInitial = userName.charAt(0).toUpperCase()
 
   return (

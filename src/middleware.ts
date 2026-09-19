@@ -20,6 +20,15 @@ export default withAuth(
   function middleware(req) {
     const { pathname, searchParams } = req.nextUrl
 
+    // Temporary demo mode (see src/lib/bypass.ts): skip all auth gates.
+    // Env is checked inline — middleware-safe (no db imports allowed here).
+    if (
+      process.env.AUTH_BYPASS === 'true' &&
+      process.env.NODE_ENV !== 'production'
+    ) {
+      return NextResponse.next()
+    }
+
     // Public health check.
     if (pathname === '/api') {
       return NextResponse.next()
@@ -51,6 +60,13 @@ export default withAuth(
   {
     callbacks: {
       authorized: ({ token, req }) => {
+        // Demo mode: authorized() runs before the middleware function, so the
+        // bypass must be checked here too (otherwise pages 307 to login).
+        if (
+          process.env.AUTH_BYPASS === 'true' &&
+          process.env.NODE_ENV !== 'production'
+        )
+          return true
         const { pathname } = req.nextUrl
         // API auth is handled inside the middleware above (JSON 401s).
         // /api (health) and the auth callbacks are intentionally public.

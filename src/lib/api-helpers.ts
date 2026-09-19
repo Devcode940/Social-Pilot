@@ -87,7 +87,8 @@ export async function validateBody<T>(
 // ─── withAuth ─────────────────────────────────────────────────────────────────
 // Higher-order function that requires a valid NextAuth session before
 // proceeding. The authenticated user's id/email are passed to the handler.
-// NOTE: sessions are the ONLY accepted credential — there is no demo bypass.
+// NOTE: sessions are the accepted credential, except in temporary demo mode
+// (AUTH_BYPASS=true, dev only) where requireUser() returns the demo user.
 
 type ProtectedHandler = (
   request: NextRequest,
