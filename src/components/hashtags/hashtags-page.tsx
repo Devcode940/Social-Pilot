@@ -265,8 +265,11 @@ export default function HashtagsPage() {
     if (!saveForm.setName.trim() || !saveForm.hashtags) return
     setSaving(true)
     try {
-      const tags = JSON.parse(saveForm.hashtags) as string[]
-      const totalReach = tags.length * Math.floor(Math.random() * 500_000 + 100_000)
+      const parsed: unknown = JSON.parse(saveForm.hashtags)
+      if (!Array.isArray(parsed) || !parsed.every((t) => typeof t === 'string')) {
+        throw new Error('Invalid hashtag list')
+      }
+      const tags = parsed as string[]
       const res = await fetch('/api/hashtags', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -274,7 +277,8 @@ export default function HashtagsPage() {
           name: saveForm.setName.trim(),
           hashtags: JSON.stringify(tags),
           platform: saveForm.platform,
-          reach: totalReach,
+          // Reach is unknown until measured from real platform data — never fabricate it.
+          reach: null,
         }),
       })
       if (!res.ok) throw new Error('Failed to save')

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth-helpers";
-import { tryCatch, validateBody, errorResponse } from "@/lib/api-helpers";
+import { tryCatch, validateBody, errorResponse, rateLimitByUser, rateLimitExceededResponse } from "@/lib/api-helpers";
 
 const mediaStatus = z.enum(["editing", "exported"]);
 
@@ -24,9 +24,12 @@ const updateMediaSchema = z.object({
 });
 
 // GET /api/media — list the caller's media projects
-export const GET = tryCatch(async () => {
+export const GET = tryCatch(async (request: NextRequest) => {
   const user = await requireUser();
   if (!user) return errorResponse("Unauthorized", 401);
+
+  const limiter = rateLimitByUser(request, user.id, { maxRequests: 60, windowSeconds: 60 });
+  if (!limiter.allowed) return rateLimitExceededResponse(limiter);
 
   const media = await db.mediaProject.findMany({
     where: { userId: user.id },
@@ -39,6 +42,9 @@ export const GET = tryCatch(async () => {
 export const POST = tryCatch(async (request: NextRequest) => {
   const user = await requireUser();
   if (!user) return errorResponse("Unauthorized", 401);
+
+  const limiter = rateLimitByUser(request, user.id, { maxRequests: 60, windowSeconds: 60 });
+  if (!limiter.allowed) return rateLimitExceededResponse(limiter);
 
   const validation = await validateBody(request, createMediaSchema);
   if (!validation.success) return validation.response;
@@ -62,6 +68,9 @@ export const POST = tryCatch(async (request: NextRequest) => {
 export const PUT = tryCatch(async (request: NextRequest) => {
   const user = await requireUser();
   if (!user) return errorResponse("Unauthorized", 401);
+
+  const limiter = rateLimitByUser(request, user.id, { maxRequests: 60, windowSeconds: 60 });
+  if (!limiter.allowed) return rateLimitExceededResponse(limiter);
 
   const validation = await validateBody(request, updateMediaSchema);
   if (!validation.success) return validation.response;
@@ -90,6 +99,9 @@ export const PUT = tryCatch(async (request: NextRequest) => {
 export const DELETE = tryCatch(async (request: NextRequest) => {
   const user = await requireUser();
   if (!user) return errorResponse("Unauthorized", 401);
+
+  const limiter = rateLimitByUser(request, user.id, { maxRequests: 60, windowSeconds: 60 });
+  if (!limiter.allowed) return rateLimitExceededResponse(limiter);
 
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");

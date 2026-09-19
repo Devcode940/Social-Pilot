@@ -129,7 +129,6 @@ export const POST = tryCatch(async (request: NextRequest) => {
       }
 
       const allResults = [...searchResults, ...searchResults2];
-      const platforms = ["Instagram", "Facebook", "YouTube", "TikTok", "Twitter", "Website"];
 
       // Create match records for potential copies found
       const matches: any[] = [];
@@ -156,7 +155,9 @@ export const POST = tryCatch(async (request: NextRequest) => {
         else if (urlLower.includes("tiktok")) platform = "TikTok";
         else if (urlLower.includes("twitter") || urlLower.includes("x.com")) platform = "Twitter";
         else {
-          platform = platforms[Math.floor(Math.random() * platforms.length)];
+          // No recognizable platform: report Unknown. Never guess — a guessed
+          // platform persisted as fact is fabricated evidence.
+          platform = "Unknown";
         }
 
         const match = await db.copyrightMatch.create({

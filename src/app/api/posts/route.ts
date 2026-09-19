@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth-helpers";
-import { tryCatch, validateBody, errorResponse } from "@/lib/api-helpers";
+import { tryCatch, validateBody, errorResponse, rateLimitByUser, rateLimitExceededResponse } from "@/lib/api-helpers";
 
 const postStatus = z.enum(["draft", "scheduled", "published", "failed"]);
 
@@ -42,8 +42,13 @@ export const GET = tryCatch(async (request: NextRequest) => {
   const user = await requireUser();
   if (!user) return errorResponse("Unauthorized", 401);
 
+  const limiter = rateLimitByUser(request, user.id, { maxRequests: 60, windowSeconds: 60 });
+  if (!limiter.allowed) return rateLimitExceededResponse(limiter);
+
   const { searchParams } = new URL(request.url);
-  const status = searchParams.get("status");
+  // Validate against the enum: a raw string here would throw inside Prisma (500).
+  const statusParam = searchParams.get("status");
+  const status = statusParam && postStatus.safeParse(statusParam).success ? statusParam : undefined;
 
   const posts = await db.post.findMany({
     where: { userId: user.id, ...(status ? { status } : {}) },
@@ -57,6 +62,9 @@ export const GET = tryCatch(async (request: NextRequest) => {
 export const POST = tryCatch(async (request: NextRequest) => {
   const user = await requireUser();
   if (!user) return errorResponse("Unauthorized", 401);
+
+  const limiter = rateLimitByUser(request, user.id, { maxRequests: 60, windowSeconds: 60 });
+  if (!limiter.allowed) return rateLimitExceededResponse(limiter);
 
   const validation = await validateBody(request, createPostSchema);
   if (!validation.success) return validation.response;
@@ -92,6 +100,9 @@ export const POST = tryCatch(async (request: NextRequest) => {
 export const PUT = tryCatch(async (request: NextRequest) => {
   const user = await requireUser();
   if (!user) return errorResponse("Unauthorized", 401);
+
+  const limiter = rateLimitByUser(request, user.id, { maxRequests: 60, windowSeconds: 60 });
+  if (!limiter.allowed) return rateLimitExceededResponse(limiter);
 
   const validation = await validateBody(request, updatePostSchema);
   if (!validation.success) return validation.response;
@@ -131,6 +142,9 @@ export const PUT = tryCatch(async (request: NextRequest) => {
 export const DELETE = tryCatch(async (request: NextRequest) => {
   const user = await requireUser();
   if (!user) return errorResponse("Unauthorized", 401);
+
+  const limiter = rateLimitByUser(request, user.id, { maxRequests: 60, windowSeconds: 60 });
+  if (!limiter.allowed) return rateLimitExceededResponse(limiter);
 
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");

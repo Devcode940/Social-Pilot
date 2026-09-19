@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth-helpers";
-import { tryCatch, errorResponse } from "@/lib/api-helpers";
+import { tryCatch, errorResponse, rateLimitByUser, rateLimitExceededResponse } from "@/lib/api-helpers";
 
 const PERIOD_DAYS: Record<string, number> = {
   "7d": 7,
@@ -12,6 +12,9 @@ const PERIOD_DAYS: Record<string, number> = {
 export const GET = tryCatch(async (request: NextRequest) => {
     const user = await requireUser();
     if (!user) return errorResponse("Unauthorized", 401);
+
+    const limiter = rateLimitByUser(request, user.id, { maxRequests: 60, windowSeconds: 60 });
+    if (!limiter.allowed) return rateLimitExceededResponse(limiter);
 
     const { searchParams } = new URL(request.url);
     const period = ["7d", "30d", "90d"].includes(searchParams.get("period") || "")

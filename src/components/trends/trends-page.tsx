@@ -260,7 +260,7 @@ export default function TrendsPage() {
         const count = (trendCategories[cat] || 0) + (viralCategories[cat] || 0)
         return {
           category: cat.length > 12 ? cat.slice(0, 11) + '\n' + cat.slice(11) : cat,
-          growth: count * 85 + Math.floor(Math.random() * 40), // Simulated growth metric
+          growth: count * 85,
         }
       }).sort((a, b) => b.growth - a.growth)
 

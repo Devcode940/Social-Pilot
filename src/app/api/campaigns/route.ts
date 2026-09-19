@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth-helpers";
-import { tryCatch, validateBody, errorResponse } from "@/lib/api-helpers";
+import { tryCatch, validateBody, errorResponse, rateLimitByUser, rateLimitExceededResponse } from "@/lib/api-helpers";
 
 const campaignType = z.enum(["like", "follow", "comment", "view"]);
 const campaignStatus = z.enum(["active", "paused", "completed"]);
@@ -23,9 +23,12 @@ const updateCampaignSchema = z.object({
   targetCount: z.coerce.number().int().min(1).max(10_000_000).optional(),
 });
 
-export const GET = tryCatch(async () => {
+export const GET = tryCatch(async (request: NextRequest) => {
   const user = await requireUser();
   if (!user) return errorResponse("Unauthorized", 401);
+
+  const limiter = rateLimitByUser(request, user.id, { maxRequests: 60, windowSeconds: 60 });
+  if (!limiter.allowed) return rateLimitExceededResponse(limiter);
 
   const campaigns = await db.campaign.findMany({
     where: { userId: user.id },
@@ -38,6 +41,9 @@ export const GET = tryCatch(async () => {
 export const POST = tryCatch(async (request: NextRequest) => {
   const user = await requireUser();
   if (!user) return errorResponse("Unauthorized", 401);
+
+  const limiter = rateLimitByUser(request, user.id, { maxRequests: 60, windowSeconds: 60 });
+  if (!limiter.allowed) return rateLimitExceededResponse(limiter);
 
   const validation = await validateBody(request, createCampaignSchema);
   if (!validation.success) return validation.response;
@@ -60,6 +66,9 @@ export const POST = tryCatch(async (request: NextRequest) => {
 export const PATCH = tryCatch(async (request: NextRequest) => {
   const user = await requireUser();
   if (!user) return errorResponse("Unauthorized", 401);
+
+  const limiter = rateLimitByUser(request, user.id, { maxRequests: 60, windowSeconds: 60 });
+  if (!limiter.allowed) return rateLimitExceededResponse(limiter);
 
   const validation = await validateBody(request, updateCampaignSchema);
   if (!validation.success) return validation.response;
@@ -91,6 +100,9 @@ export const PATCH = tryCatch(async (request: NextRequest) => {
 export const DELETE = tryCatch(async (request: NextRequest) => {
   const user = await requireUser();
   if (!user) return errorResponse("Unauthorized", 401);
+
+  const limiter = rateLimitByUser(request, user.id, { maxRequests: 60, windowSeconds: 60 });
+  if (!limiter.allowed) return rateLimitExceededResponse(limiter);
 
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");

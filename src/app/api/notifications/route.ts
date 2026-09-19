@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth-helpers";
-import { tryCatch, validateBody, errorResponse } from "@/lib/api-helpers";
+import { tryCatch, validateBody, errorResponse, rateLimitByUser, rateLimitExceededResponse } from "@/lib/api-helpers";
 
 const createNotificationSchema = z.object({
   type: z.string().trim().min(1).max(64).optional(),
@@ -19,6 +19,9 @@ const markReadSchema = z.object({
 export const GET = tryCatch(async (request: NextRequest) => {
   const user = await requireUser();
   if (!user) return errorResponse("Unauthorized", 401);
+
+  const limiter = rateLimitByUser(request, user.id, { maxRequests: 60, windowSeconds: 60 });
+  if (!limiter.allowed) return rateLimitExceededResponse(limiter);
 
   const { searchParams } = new URL(request.url);
   const unreadOnly = searchParams.get("unreadOnly") === "true";
@@ -43,6 +46,9 @@ export const POST = tryCatch(async (request: NextRequest) => {
   const user = await requireUser();
   if (!user) return errorResponse("Unauthorized", 401);
 
+  const limiter = rateLimitByUser(request, user.id, { maxRequests: 60, windowSeconds: 60 });
+  if (!limiter.allowed) return rateLimitExceededResponse(limiter);
+
   const validation = await validateBody(request, createNotificationSchema);
   if (!validation.success) return validation.response;
   const { type, title, message, link } = validation.data;
@@ -63,6 +69,9 @@ export const POST = tryCatch(async (request: NextRequest) => {
 export const PATCH = tryCatch(async (request: NextRequest) => {
   const user = await requireUser();
   if (!user) return errorResponse("Unauthorized", 401);
+
+  const limiter = rateLimitByUser(request, user.id, { maxRequests: 60, windowSeconds: 60 });
+  if (!limiter.allowed) return rateLimitExceededResponse(limiter);
 
   const validation = await validateBody(request, markReadSchema);
   if (!validation.success) return validation.response;

@@ -1,13 +1,22 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth-helpers";
-import { tryCatch, errorResponse } from "@/lib/api-helpers";
+import {
+  tryCatch,
+  errorResponse,
+  rateLimit,
+  rateLimitExceededResponse,
+} from "@/lib/api-helpers";
 
 // Demo credentials for the seeded account (development only).
 export const DEMO_EMAIL = "demo@socialtool.com";
-export const DEMO_PASSWORD = "Demo1234!";
+// Overridable via env for staging/prod-like environments. The compiled-in
+// default is refused outside development so a seeded well-known password
+// can never exist in production.
+export const DEMO_PASSWORD =
+  process.env.SEED_DEMO_PASSWORD ?? "Demo1234!";
 
 const daysAgo = (days: number, hours = 0) =>
   new Date(Date.now() - days * 86_400_000 - hours * 3_600_000);
@@ -15,7 +24,18 @@ const daysAgo = (days: number, hours = 0) =>
 // POST /api/seed — create demo data.
 // Public ONLY for first-run bootstrap (zero users in the DB); afterwards a
 // login is required. Idempotent: returns early when the demo user exists.
-export const POST = tryCatch(async () => {
+export const POST = tryCatch(async (request: NextRequest) => {
+  // Heavy write endpoint (dozens of rows): strict IP cap, applies to both
+  // bootstrap and authenticated re-seeds.
+  const limiter = rateLimit(request, { maxRequests: 5, windowSeconds: 60 });
+  if (!limiter.allowed) return rateLimitExceededResponse(limiter);
+
+  if (process.env.NODE_ENV === "production" && !process.env.SEED_DEMO_PASSWORD) {
+    return errorResponse(
+      "Refusing to seed with the default demo password in production. Set SEED_DEMO_PASSWORD.",
+      403
+    );
+  }
   const userCount = await db.user.count();
   if (userCount > 0) {
     const caller = await requireUser();

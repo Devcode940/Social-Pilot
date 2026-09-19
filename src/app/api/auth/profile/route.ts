@@ -1,13 +1,16 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { rateLimitByUser, rateLimitExceededResponse } from '@/lib/api-helpers'
 import { requireUser } from '@/lib/auth-helpers'
 import { db } from '@/lib/db'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const me = await requireUser()
     if (!me) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const limiter = rateLimitByUser(request, me.id, { maxRequests: 60, windowSeconds: 60 });
+    if (!limiter.allowed) return rateLimitExceededResponse(limiter);
 
     const user = await db.user.findUnique({
       where: { id: me.id },
@@ -25,12 +28,14 @@ export async function GET() {
   }
 }
 
-export async function PATCH(request: Request) {
+export async function PATCH(request: NextRequest) {
   try {
     const me = await requireUser()
     if (!me) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const limiter = rateLimitByUser(request, me.id, { maxRequests: 60, windowSeconds: 60 });
+    if (!limiter.allowed) return rateLimitExceededResponse(limiter);
 
     const body = await request.json()
     const { name, bio, timezone } = body

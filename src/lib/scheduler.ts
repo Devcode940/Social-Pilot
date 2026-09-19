@@ -19,35 +19,45 @@ export interface JobResult {
  * Publish due scheduled posts. Each notification goes to the post's OWNER
  * (not the first user in the database).
  */
-export async function processScheduledPosts(now = new Date()): Promise<JobResult> {
-  const details: JobDetail[] = []
+// Bound every cron batch: without `take`, one tick could attempt to publish an
+// unbounded backlog in a single request and blow past timeouts.
+const MAX_POSTS_PER_RUN = 100
+const MAX_CAMPAIGNS_PER_RUN = 100
 
+export async function processScheduledPosts(now = new Date()): Promise<JobResult> {
   const postsToPublish = await db.post.findMany({
     where: { status: 'scheduled', scheduledAt: { lte: now } },
+    select: { id: true, userId: true, platforms: true },
+    orderBy: { scheduledAt: 'asc' },
+    take: MAX_POSTS_PER_RUN,
   })
 
-  for (const post of postsToPublish) {
-    await db.post.update({
-      where: { id: post.id },
-      data: { status: 'published', publishedAt: now },
-    })
-
-    await db.notification.create({
-      data: {
-        userId: post.userId,
-        type: 'post',
-        title: 'Post Published',
-        message: 'Your scheduled post was published',
-      },
-    })
-
-    details.push({
-      id: post.id,
-      message: `Published scheduled post (platforms: ${post.platforms})`,
-    })
+  if (postsToPublish.length === 0) {
+    return { processed: 0, details: [] }
   }
 
-  return { processed: postsToPublish.length, details }
+  // Set-based writes: 2 round-trips total instead of 2N sequential ones.
+  const ids = postsToPublish.map((p) => p.id)
+  await db.post.updateMany({
+    where: { id: { in: ids } },
+    data: { status: 'published', publishedAt: now },
+  })
+  await db.notification.createMany({
+    data: postsToPublish.map((post) => ({
+      userId: post.userId,
+      type: 'post',
+      title: 'Post Published',
+      message: 'Your scheduled post was published',
+    })),
+  })
+
+  return {
+    processed: postsToPublish.length,
+    details: postsToPublish.map((post) => ({
+      id: post.id,
+      message: `Published scheduled post (platforms: ${post.platforms})`,
+    })),
+  }
 }
 
 /**
@@ -60,29 +70,33 @@ export async function processCampaigns(): Promise<JobResult> {
 
   const activeCampaigns = await db.campaign.findMany({
     where: { status: 'active' },
+    select: { id: true, userId: true, name: true, targetCount: true, currentCount: true },
+    orderBy: { createdAt: 'asc' },
+    take: MAX_CAMPAIGNS_PER_RUN,
   })
+
+  const completed = activeCampaigns.filter((c) => c.currentCount >= c.targetCount)
+  if (completed.length > 0) {
+    const endedAt = new Date()
+    await db.campaign.updateMany({
+      where: { id: { in: completed.map((c) => c.id) } },
+      data: { status: 'completed', endedAt },
+    })
+    const notifiable = completed.filter((c): c is typeof c & { userId: string } => c.userId !== null)
+    if (notifiable.length > 0) {
+      await db.notification.createMany({
+        data: notifiable.map((campaign) => ({
+          userId: campaign.userId,
+          type: 'campaign',
+          title: 'Campaign Completed',
+          message: `"${campaign.name}" has reached its target of ${campaign.targetCount}!`,
+        })),
+      })
+    }
+  }
 
   for (const campaign of activeCampaigns) {
     const isCompleted = campaign.currentCount >= campaign.targetCount
-
-    if (isCompleted) {
-      await db.campaign.update({
-        where: { id: campaign.id },
-        data: { status: 'completed', endedAt: new Date() },
-      })
-
-      if (campaign.userId) {
-        await db.notification.create({
-          data: {
-            userId: campaign.userId,
-            type: 'campaign',
-            title: 'Campaign Completed',
-            message: `"${campaign.name}" has reached its target of ${campaign.targetCount}!`,
-          },
-        })
-      }
-    }
-
     details.push({
       id: campaign.id,
       message: isCompleted

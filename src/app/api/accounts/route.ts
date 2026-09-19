@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth-helpers";
-import { tryCatch, validateBody, errorResponse } from "@/lib/api-helpers";
+import { tryCatch, validateBody, errorResponse, rateLimitByUser, rateLimitExceededResponse } from "@/lib/api-helpers";
 
 const createAccountSchema = z.object({
   platform: z.string().trim().min(1).max(64),
@@ -19,9 +19,12 @@ const updateAccountSchema = z.object({
   avatar: z.string().trim().max(2048).optional().nullable(),
 });
 
-export const GET = tryCatch(async () => {
+export const GET = tryCatch(async (request: NextRequest) => {
   const user = await requireUser();
   if (!user) return errorResponse("Unauthorized", 401);
+
+  const limiter = rateLimitByUser(request, user.id, { maxRequests: 60, windowSeconds: 60 });
+  if (!limiter.allowed) return rateLimitExceededResponse(limiter);
 
   const accounts = await db.socialAccount.findMany({
     where: { userId: user.id },
@@ -36,6 +39,9 @@ export const GET = tryCatch(async () => {
 export const POST = tryCatch(async (request: NextRequest) => {
   const user = await requireUser();
   if (!user) return errorResponse("Unauthorized", 401);
+
+  const limiter = rateLimitByUser(request, user.id, { maxRequests: 60, windowSeconds: 60 });
+  if (!limiter.allowed) return rateLimitExceededResponse(limiter);
 
   const validation = await validateBody(request, createAccountSchema);
   if (!validation.success) return validation.response;
@@ -66,6 +72,9 @@ export const PUT = tryCatch(async (request: NextRequest) => {
   const user = await requireUser();
   if (!user) return errorResponse("Unauthorized", 401);
 
+  const limiter = rateLimitByUser(request, user.id, { maxRequests: 60, windowSeconds: 60 });
+  if (!limiter.allowed) return rateLimitExceededResponse(limiter);
+
   const validation = await validateBody(request, updateAccountSchema);
   if (!validation.success) return validation.response;
   const { id, ...data } = validation.data;
@@ -92,6 +101,9 @@ export const PUT = tryCatch(async (request: NextRequest) => {
 export const DELETE = tryCatch(async (request: NextRequest) => {
   const user = await requireUser();
   if (!user) return errorResponse("Unauthorized", 401);
+
+  const limiter = rateLimitByUser(request, user.id, { maxRequests: 60, windowSeconds: 60 });
+  if (!limiter.allowed) return rateLimitExceededResponse(limiter);
 
   const { searchParams } = new URL(request.url);
   let id = searchParams.get("id");

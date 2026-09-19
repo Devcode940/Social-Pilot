@@ -109,21 +109,39 @@ export const POST = tryCatch(async (request: NextRequest) => {
       take: 25,
     });
 
+    // Parallelize the LLM-bound work with bounded concurrency (25 serial
+    // round-trips previously). One comment's failure never aborts the rest.
+    const ANALYZE_CONCURRENCY = 5;
+    const sentiments = new Map<string, string>();
+    for (let i = 0; i < pending.length; i += ANALYZE_CONCURRENCY) {
+      const chunk = pending.slice(i, i + ANALYZE_CONCURRENCY);
+      const settled = await Promise.allSettled(
+        chunk.map(async (comment) => ({
+          id: comment.id,
+          sentiment: await analyzeCommentSentiment(comment.content),
+        }))
+      );
+      settled.forEach((result, j) => {
+        if (result.status === "fulfilled") {
+          sentiments.set(result.value.id, result.value.sentiment);
+        } else {
+          console.error(
+            `Failed to analyze sentiment for comment ${chunk[j].id}:`,
+            result.reason
+          );
+        }
+      });
+    }
+
+    // Independent row writes — fire together.
     let analyzed = 0;
-    for (const comment of pending) {
-      try {
-        const sentiment = await analyzeCommentSentiment(comment.content);
-        await db.comment.update({
-          where: { id: comment.id },
-          data: { sentiment },
-        });
-        analyzed += 1;
-      } catch (err) {
-        console.error(
-          `Failed to analyze sentiment for comment ${comment.id}:`,
-          err
-        );
-      }
+    if (sentiments.size > 0) {
+      await Promise.all(
+        [...sentiments].map(([id, sentiment]) =>
+          db.comment.update({ where: { id }, data: { sentiment } })
+        )
+      );
+      analyzed = sentiments.size;
     }
 
     const updated = await db.comment.findMany({

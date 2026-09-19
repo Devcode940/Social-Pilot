@@ -454,27 +454,37 @@ export default function PosterPage() {
         const formData = new FormData()
         formData.append('file', file)
 
-        // Simulate progress
-        let progress = 0
-        const progressInterval = setInterval(() => {
-          progress = Math.min(progress + Math.random() * 20, 90)
-          setUploadProgress(progress)
-        }, 200)
-
-        const res = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
+        // Real byte progress via XHR (fetch has no upload-progress events).
+        const data = await new Promise<UploadedMedia>((resolve, reject) => {
+          const xhr = new XMLHttpRequest()
+          xhr.open('POST', '/api/upload')
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable && e.total > 0) {
+              setUploadProgress(Math.round((e.loaded / e.total) * 100))
+            }
+          }
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try {
+                resolve(JSON.parse(xhr.responseText) as UploadedMedia)
+              } catch {
+                reject(new Error('Upload failed: invalid server response'))
+              }
+            } else {
+              try {
+                const err = JSON.parse(xhr.responseText) as { error?: string; message?: string }
+                reject(new Error(err.error || err.message || 'Upload failed'))
+              } catch {
+                reject(new Error(`Upload failed (${xhr.status})`))
+              }
+            }
+          }
+          xhr.onerror = () => reject(new Error('Upload failed: network error'))
+          xhr.onabort = () => reject(new Error('Upload cancelled'))
+          xhr.send(formData)
         })
 
-        clearInterval(progressInterval)
         setUploadProgress(100)
-
-        if (!res.ok) {
-          const err = await res.json()
-          throw new Error(err.message || 'Upload failed')
-        }
-
-        const data = await res.json()
         setUploadedMedia(prev => [...prev, data])
         toast.success(`Uploaded: ${file.name}`)
       } catch (e) {

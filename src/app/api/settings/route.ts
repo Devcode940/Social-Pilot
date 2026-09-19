@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser, maskSecret } from "@/lib/auth-helpers";
-import { tryCatch, errorResponse } from "@/lib/api-helpers";
+import { tryCatch, errorResponse, rateLimitByUser, rateLimitExceededResponse } from "@/lib/api-helpers";
 
 const profileSchema = z.object({
   name: z.string().trim().min(1).max(128).optional(),
@@ -68,9 +68,12 @@ function parseSection<T>(schema: z.ZodType<T>, data: unknown) {
   return { ok: true as const, data: result.data };
 }
 
-export const GET = tryCatch(async () => {
+export const GET = tryCatch(async (request: NextRequest) => {
   const user = await requireUser();
   if (!user) return errorResponse("Unauthorized", 401);
+
+  const limiter = rateLimitByUser(request, user.id, { maxRequests: 60, windowSeconds: 60 });
+  if (!limiter.allowed) return rateLimitExceededResponse(limiter);
 
   const [profile, settings, apiKeys] = await Promise.all([
     db.user.findUnique({
@@ -111,6 +114,9 @@ export const GET = tryCatch(async () => {
 export const POST = tryCatch(async (request: NextRequest) => {
   const user = await requireUser();
   if (!user) return errorResponse("Unauthorized", 401);
+
+  const limiter = rateLimitByUser(request, user.id, { maxRequests: 60, windowSeconds: 60 });
+  if (!limiter.allowed) return rateLimitExceededResponse(limiter);
 
   const body = await request.json();
   const { section, ...data } = body as { section?: string } & Record<
@@ -249,6 +255,9 @@ export const POST = tryCatch(async (request: NextRequest) => {
 export const DELETE = tryCatch(async (request: NextRequest) => {
   const user = await requireUser();
   if (!user) return errorResponse("Unauthorized", 401);
+
+  const limiter = rateLimitByUser(request, user.id, { maxRequests: 60, windowSeconds: 60 });
+  if (!limiter.allowed) return rateLimitExceededResponse(limiter);
 
   const { searchParams } = new URL(request.url);
   const action = searchParams.get("action");

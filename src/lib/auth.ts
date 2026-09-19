@@ -11,9 +11,29 @@ const loginBuckets = new Map<string, { count: number; resetAt: number }>()
 const LOGIN_WINDOW_MS = 60 * 1000
 const LOGIN_MAX_PER_IP = 60
 const LOGIN_MAX_PER_IP_EMAIL = 10
+// Memory guard: buckets are keyed by attacker-controlled input (IP + email),
+// so evict expired entries lazily and hard-cap total size. Worst case a
+// flood of distinct keys costs LOGIN_BUCKET_MAX small entries, never OOM.
+const LOGIN_BUCKET_MAX = 10_000
+let lastLoginSweepAt = 0
+const LOGIN_SWEEP_INTERVAL_MS = 5 * 60 * 1000
+
+function sweepLoginBuckets(now: number): void {
+  if (loginBuckets.size >= LOGIN_BUCKET_MAX) {
+    loginBuckets.clear()
+    lastLoginSweepAt = now
+    return
+  }
+  if (now - lastLoginSweepAt < LOGIN_SWEEP_INTERVAL_MS) return
+  lastLoginSweepAt = now
+  for (const [key, entry] of loginBuckets) {
+    if (entry.resetAt <= now) loginBuckets.delete(key)
+  }
+}
 
 function loginAllowed(key: string, max: number): boolean {
   const now = Date.now()
+  sweepLoginBuckets(now)
   const entry = loginBuckets.get(key)
   if (!entry || entry.resetAt <= now) {
     loginBuckets.set(key, { count: 1, resetAt: now + LOGIN_WINDOW_MS })

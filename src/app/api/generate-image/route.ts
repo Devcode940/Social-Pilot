@@ -13,8 +13,7 @@ import {
   rateLimitByUser,
   rateLimitExceededResponse,
 } from "@/lib/api-helpers";
-
-const UPLOAD_DIR = join(process.cwd(), "public", "uploads");
+import { UPLOAD_DIR } from "@/lib/uploads";
 
 const VALID_SIZES = [
   "1024x1024",

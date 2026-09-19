@@ -173,16 +173,26 @@ export function rateLimit(
   cleanupRateLimitStore(now);
 
   // Determine identifier: custom or IP-based
-  let key: string;
+  let baseKey: string;
   if (identifier) {
-    key = identifier;
+    baseKey = identifier;
   } else {
     // Try to get real IP from headers (reverse proxy friendly)
     const forwarded = request.headers.get("x-forwarded-for");
     const realIp = request.headers.get("x-real-ip");
-    const ip = forwarded?.split(",")[0]?.trim() || realIp || "unknown";
-    key = ip;
+    baseKey = forwarded?.split(",")[0]?.trim() || realIp || "unknown";
   }
+
+  // Namespace by endpoint. Without this, every route sharing an identifier
+  // (e.g. all routes for one user id) drains a single global bucket, so
+  // heavy use of one endpoint 429s all others.
+  let pathname = "unknown";
+  try {
+    pathname = new URL(request.url).pathname;
+  } catch {
+    // Malformed URL — fall through with a shared key rather than crashing.
+  }
+  const key = `${baseKey}:${pathname}`;
 
   const windowMs = windowSeconds * 1000;
 
