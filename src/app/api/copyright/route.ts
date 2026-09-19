@@ -3,6 +3,8 @@ import { z } from "zod";
 import crypto from "crypto";
 import ZAI from "z-ai-web-dev-sdk";
 import { db } from "@/lib/db";
+import type { CopyrightMatch } from "@prisma/client";
+import { asSearchResults, resultUrl, type ZaiSearchResult } from "@/lib/zai-types";
 import { requireUser } from "@/lib/auth-helpers";
 import {
   tryCatch,
@@ -105,25 +107,25 @@ export const POST = tryCatch(async (request: NextRequest) => {
       const zai = await ZAI.create();
       const searchQuery = `"${content.name}" ${content.type.toLowerCase()} copy unauthorized use`;
 
-      let searchResults: any[] = [];
+      let searchResults: ZaiSearchResult[] = [];
       try {
         const results = await zai.functions.invoke("web_search", {
           query: searchQuery,
           num: 10,
         });
-        searchResults = Array.isArray(results) ? results as any[] : [];
+        searchResults = asSearchResults(results);
       } catch {
         // Search failed, will return empty matches
       }
 
       // Also search for the content name specifically
-      let searchResults2: any[] = [];
+      let searchResults2: ZaiSearchResult[] = [];
       try {
         const results2 = await zai.functions.invoke("web_search", {
           query: `${content.name} ${content.sourceUrl ? "site:" + new URL(content.sourceUrl).hostname : ""} similar content`,
           num: 8,
         });
-        searchResults2 = Array.isArray(results2) ? results2 as any[] : [];
+        searchResults2 = asSearchResults(results2);
       } catch {
         // Skip secondary search
       }
@@ -131,16 +133,16 @@ export const POST = tryCatch(async (request: NextRequest) => {
       const allResults = [...searchResults, ...searchResults2];
 
       // Create match records for potential copies found
-      const matches: any[] = [];
+      const matches: CopyrightMatch[] = [];
       const seenUrls = new Set<string>();
 
       for (const result of allResults) {
-        const url = (result.url as string) || "";
+        const url = resultUrl(result);
         if (!url || seenUrls.has(url)) continue;
         seenUrls.add(url);
 
-        const title = (result.name as string) || "";
-        const snippet = (result.snippet as string) || "";
+        const title = typeof result.name === "string" ? result.name : "";
+        const snippet = typeof result.snippet === "string" ? result.snippet : "";
 
         // Calculate similarity based on text overlap
         const nameSimilarity = calculateSimilarity(content.name, title + " " + snippet);
@@ -223,14 +225,14 @@ export const POST = tryCatch(async (request: NextRequest) => {
     // Auto-scan via web search after registration
     const zai = await ZAI.create();
     const searchQuery = `"${name}" ${type.toLowerCase()} similar content copy`;
-    let searchResults: any[] = [];
+    let searchResults: ZaiSearchResult[] = [];
 
     try {
       const results = await zai.functions.invoke("web_search", {
         query: searchQuery,
         num: 8,
       });
-      searchResults = Array.isArray(results) ? (results as any[]) : [];
+      searchResults = asSearchResults(results);
     } catch {
       // Scan failed, continue
     }
@@ -238,12 +240,12 @@ export const POST = tryCatch(async (request: NextRequest) => {
     const seenUrls = new Set<string>();
 
     for (const result of searchResults) {
-      const url = (result.url as string) || "";
+      const url = resultUrl(result);
       if (!url || seenUrls.has(url)) continue;
       seenUrls.add(url);
 
-      const title = (result.name as string) || "";
-      const snippet = (result.snippet as string) || "";
+      const title = typeof result.name === "string" ? result.name : "";
+      const snippet = typeof result.snippet === "string" ? result.snippet : "";
       const nameSim = calculateSimilarity(name, title + " " + snippet);
       const similarity = Math.min(90, Math.max(5, nameSim));
 

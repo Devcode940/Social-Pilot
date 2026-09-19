@@ -76,29 +76,57 @@ export function NotificationBell() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const setCurrentPage = useAppStore((s) => s.setCurrentPage)
 
+  // Pure data loader: no state writes, safe to drive from effects or timers.
+  const loadNotifications = useCallback(async (): Promise<{
+    items: NotificationItem[]
+    unread: number
+  }> => {
+    const res = await fetch('/api/notifications')
+    const data = await res.json()
+    const items: NotificationItem[] = (data.notifications || []).map(
+      (n: NotificationItem) => ({ ...n, isRead: n.isRead ?? n.read ?? false })
+    )
+    return { items, unread: data.unreadCount || 0 }
+  }, [])
+
+  // Timer entry point (30s poll): sets state from a timer callback, not the
+  // effect body.
   const fetchNotifications = useCallback(async () => {
     try {
-      const res = await fetch('/api/notifications')
-      const data = await res.json()
-      const items: NotificationItem[] = (data.notifications || []).map(
-        (n: NotificationItem) => ({ ...n, isRead: n.isRead ?? n.read ?? false })
-      )
+      const { items, unread } = await loadNotifications()
       setNotifications(items)
-      setUnreadCount(data.unreadCount || 0)
+      setUnreadCount(unread)
     } catch {
       // silently fail
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [loadNotifications])
 
+  // Initial load + poller: every setState below runs in a promise
+  // continuation (post-await) or a timer callback, never synchronously in
+  // the effect body.
   useEffect(() => {
-    fetchNotifications()
-    intervalRef.current = setInterval(fetchNotifications, 30000)
+    let cancelled = false
+    loadNotifications()
+      .then(({ items, unread }) => {
+        if (cancelled) return
+        setNotifications(items)
+        setUnreadCount(unread)
+        setLoading(false)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setLoading(false)
+      })
+    intervalRef.current = setInterval(() => {
+      void fetchNotifications()
+    }, 30000)
     return () => {
+      cancelled = true
       if (intervalRef.current) clearInterval(intervalRef.current)
     }
-  }, [fetchNotifications])
+  }, [loadNotifications, fetchNotifications])
 
   const markAsRead = async (id: string) => {
     try {

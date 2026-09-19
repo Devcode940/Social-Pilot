@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -170,12 +170,10 @@ export default function AIWriterPage() {
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set())
 
   // History
-  const [history, setHistory] = useState<HistoryItem[]>([])
+  const [history, setHistory] = useState<HistoryItem[]>(loadHistory)
 
   // Load history on mount
-  useEffect(() => {
-    setHistory(loadHistory())
-  }, [])
+
 
   // ─── Handlers ────────────────────────────────────────────────────────────
 

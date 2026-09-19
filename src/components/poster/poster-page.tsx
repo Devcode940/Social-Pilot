@@ -351,25 +351,45 @@ export default function PosterPage() {
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Load posts from API
+  // Pure data loader: no state writes, safe to drive from effects or handlers.
+  const fetchPostsList = useCallback(async (): Promise<PostFromAPI[]> => {
+    const res = await fetch(`/api/posts${filter !== 'all' ? '?status=' + filter : ''}`)
+    if (!res.ok) throw new Error('Failed to fetch posts')
+    return (await res.json()) as PostFromAPI[]
+  }, [filter])
+
+  // Handler entry point (refresh buttons etc.): sets state from an event.
   const loadPosts = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
-      const res = await fetch(`/api/posts${filter !== 'all' ? '?status=' + filter : ''}`)
-      if (!res.ok) throw new Error('Failed to fetch posts')
-      const data = await res.json()
-      setPosts(data)
+      setPosts(await fetchPostsList())
     } catch {
       setError('Failed to load posts')
     } finally {
       setLoading(false)
     }
-  }, [filter])
+  }, [fetchPostsList])
 
+  // Reload on filter change: every setState below runs in a promise
+  // continuation (post-await), never synchronously in the effect body.
   useEffect(() => {
-    loadPosts()
-  }, [loadPosts])
+    let cancelled = false
+    fetchPostsList()
+      .then((data) => {
+        if (cancelled) return
+        setPosts(data)
+        setLoading(false)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setError('Failed to load posts')
+        setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [fetchPostsList])
 
   // Character limit logic
   const activeCharLimit = selectedPlatforms.length > 0

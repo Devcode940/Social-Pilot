@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import ZAI from 'z-ai-web-dev-sdk'
 import { db } from '@/lib/db'
+import { asSearchResults, resultText } from '@/lib/zai-types'
 import { requireUser } from '@/lib/auth-helpers'
 import {
   tryCatch,
@@ -69,19 +70,19 @@ export const POST = tryCatch(async (request: NextRequest) => {
         query: `${query.trim()} trending hashtags ${year}${platformSuffix}`,
         num: 10,
       })
-      const trendingData = Array.isArray(trendingResults) ? trendingResults : []
+      const trendingData = asSearchResults(trendingResults)
 
       // 2. Search for banned/restricted hashtags
       const bannedResults = await zai.functions.invoke('web_search', {
         query: `${query.trim()} banned hashtags instagram tiktok restricted`,
         num: 8,
       })
-      const bannedData = Array.isArray(bannedResults) ? bannedResults : []
+      const bannedData = asSearchResults(bannedResults)
 
       // Extract hashtags from search results
       const allText = [
-        ...trendingData.map((r: any) => `${(r.name as string) || ''} ${(r.snippet as string) || ''}`).join(' '),
-        ...bannedData.map((r: any) => `${(r.name as string) || ''} ${(r.snippet as string) || ''}`).join(' '),
+        trendingData.map((r) => resultText(r)).join(' '),
+        bannedData.map((r) => resultText(r)).join(' '),
       ].join(' ')
 
       // Extract hashtag-like words
@@ -90,7 +91,7 @@ export const POST = tryCatch(async (request: NextRequest) => {
       const uniqueHashtags = [...new Set(rawHashtags)]
 
       // Extract banned words from banned results
-      const bannedText = bannedData.map((r: any) => `${(r.name as string) || ''} ${(r.snippet as string) || ''}`).join(' ').toLowerCase()
+      const bannedText = bannedData.map((r) => resultText(r)).join(' ').toLowerCase()
       const knownBannedPatterns = [
         'followme', 'follow4follow', 'followforfollow', 'like4like', 'likeforlike',
         'likeforlikes', 'like4likes', 'l4l', 'f4f', 'followback',
@@ -145,8 +146,8 @@ export const POST = tryCatch(async (request: NextRequest) => {
         query: `${tagStr} banned hashtags instagram tiktok shadowbanned restricted ${new Date().getFullYear()}`,
         num: 8,
       })
-      const searchData = Array.isArray(results) ? results : []
-      const bannedContext = searchData.map((r: any) => `${(r.name as string) || ''} ${(r.snippet as string) || ''}`).join(' ').toLowerCase()
+      const searchData = asSearchResults(results)
+      const bannedContext = searchData.map((r) => resultText(r)).join(' ').toLowerCase()
 
       const knownBanned = [
         'followme', 'follow4follow', 'followforfollow', 'like4like', 'likeforlike',

@@ -135,6 +135,9 @@ export default function VideoPage() {
   const [projects, setProjects] = useState<MediaProject[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
+  // Derived selection: the user's explicit choice, falling back to the first
+  // project. No effect needed to keep this in sync.
+  const activeProjectId = selectedProjectId ?? projects[0]?.id ?? null
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
   const [newProjectType, setNewProjectType] = useState('video')
@@ -185,35 +188,49 @@ export default function VideoPage() {
 
   // ── Fetch projects ──────────────────────────────────────────────────────
 
+  // Pure data loader: no state writes, safe to drive from the effect below.
+  const loadProjects = useCallback(async (): Promise<MediaProject[]> => {
+    const res = await fetch('/api/media')
+    if (!res.ok) throw new Error('Failed to fetch projects')
+    return (await res.json()) as MediaProject[]
+  }, [])
+
+  // Handler entry point (retry button): sets state from an event.
   const fetchProjects = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
-      const res = await fetch('/api/media')
-      if (!res.ok) throw new Error('Failed to fetch projects')
-      const data = await res.json()
-      setProjects(data)
+      setProjects(await loadProjects())
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [loadProjects])
 
-  // Auto-select first project when projects load
+  // Mount-only load: every setState below runs in a promise continuation
+  // (post-await), never synchronously in the effect body.
   useEffect(() => {
-    if (projects.length > 0 && !selectedProjectId) {
-      setSelectedProjectId(projects[0].id)
+    let cancelled = false
+    loadProjects()
+      .then((data) => {
+        if (cancelled) return
+        setProjects(data)
+        setLoading(false)
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setError(err instanceof Error ? err.message : 'Unknown error')
+        setLoading(false)
+      })
+    return () => {
+      cancelled = true
     }
-  }, [projects, selectedProjectId])
-
-  useEffect(() => {
-    fetchProjects()
-  }, [fetchProjects])
+  }, [loadProjects])
 
   // ── Derived ─────────────────────────────────────────────────────────────
 
-  const selectedProject = projects.find(p => p.id === selectedProjectId) ?? null
+  const selectedProject = projects.find(p => p.id === activeProjectId) ?? null
   const totalDuration = selectedProject?.duration ?? 60
 
   const timelineProgress = totalDuration > 0 ? (currentTime / totalDuration) * 100 : 0
@@ -278,14 +295,14 @@ export default function VideoPage() {
   }
 
   const handleSaveDraft = async () => {
-    if (!selectedProjectId) return
+    if (!activeProjectId) return
     setSaving(true)
     try {
       const res = await fetch('/api/media', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id: selectedProjectId,
+          id: activeProjectId,
           status: 'editing',
         }),
       })
@@ -300,14 +317,14 @@ export default function VideoPage() {
   }
 
   const handleExport = async () => {
-    if (!selectedProjectId) return
+    if (!activeProjectId) return
     setSaving(true)
     try {
       const res = await fetch('/api/media', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id: selectedProjectId,
+          id: activeProjectId,
           status: 'exported',
         }),
       })
@@ -326,7 +343,7 @@ export default function VideoPage() {
       const res = await fetch(`/api/media?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
       if (!res.ok) throw new Error('Failed to delete')
       setProjects(prev => prev.filter(p => p.id !== id))
-      if (selectedProjectId === id) {
+      if (activeProjectId === id) {
         setSelectedProjectId(projects.find(p => p.id !== id)?.id ?? null)
       }
     } catch {
@@ -369,7 +386,7 @@ export default function VideoPage() {
             {loading ? (
               <Skeleton className="h-9 w-full" />
             ) : (
-              <Select value={selectedProjectId ?? ''} onValueChange={handleSelectProject}>
+              <Select value={activeProjectId ?? ''} onValueChange={handleSelectProject}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select project" />
                 </SelectTrigger>
@@ -394,10 +411,10 @@ export default function VideoPage() {
               <Plus className="h-4 w-4 mr-1" />
               <span className="hidden sm:inline">New Project</span>
             </Button>
-            <Button variant="outline" size="icon" onClick={handleSaveDraft} disabled={saving || !selectedProjectId}>
+            <Button variant="outline" size="icon" onClick={handleSaveDraft} disabled={saving || !activeProjectId}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             </Button>
-            <Button size="sm" onClick={handleExport} disabled={saving || !selectedProjectId}>
+            <Button size="sm" onClick={handleExport} disabled={saving || !activeProjectId}>
               <Download className="h-4 w-4 mr-1" />
               <span className="hidden sm:inline">Export</span>
             </Button>
@@ -463,7 +480,7 @@ export default function VideoPage() {
                     <button
                       key={project.id}
                       className={`w-full text-left rounded-lg p-2.5 transition-colors group ${
-                        selectedProjectId === project.id ? 'bg-accent' : 'hover:bg-accent/50'
+                        activeProjectId === project.id ? 'bg-accent' : 'hover:bg-accent/50'
                       }`}
                       onClick={() => handleSelectProject(project.id)}
                     >
@@ -645,8 +662,8 @@ export default function VideoPage() {
                   variant="outline"
                   size="sm"
                   className="h-7 text-xs text-destructive hover:text-destructive"
-                  onClick={() => selectedProjectId && handleDeleteProject(selectedProjectId)}
-                  disabled={!selectedProjectId}
+                  onClick={() => activeProjectId && handleDeleteProject(activeProjectId)}
+                  disabled={!activeProjectId}
                 >
                   <Trash2 className="h-3.5 w-3.5 mr-1" />
                   Delete
@@ -769,11 +786,11 @@ export default function VideoPage() {
               </div>
               <div className="flex-1" />
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={handleSaveDraft} disabled={saving || !selectedProjectId}>
+                <Button variant="outline" size="sm" onClick={handleSaveDraft} disabled={saving || !activeProjectId}>
                   <Save className="h-3.5 w-3.5 mr-1" />
                   Save Draft
                 </Button>
-                <Button size="sm" onClick={handleExport} disabled={saving || !selectedProjectId}>
+                <Button size="sm" onClick={handleExport} disabled={saving || !activeProjectId}>
                   <Download className="h-3.5 w-3.5 mr-1" />
                   Export Video
                 </Button>

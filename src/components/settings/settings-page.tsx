@@ -152,15 +152,29 @@ export default function SettingsPage() {
   // Danger zone state
   const [dangerLoading, setDangerLoading] = useState<string | null>(null)
 
-  const fetchSettings = useCallback(async () => {
-    try {
-      const [settingsRes, accountsRes] = await Promise.all([
-        fetch('/api/settings'),
-        fetch('/api/accounts'),
-      ])
-      const settingsData = await settingsRes.json()
-      const accountsData = await accountsRes.json()
+  // Pure data loader: no state writes, safe to drive from effects or handlers.
+  const loadSettings = useCallback(async (): Promise<{
+    settings: { user: UserData; settings: SettingsData; apiKeys: ApiKeyItem[] }
+    accounts: ConnectedAccount[]
+  }> => {
+    const [settingsRes, accountsRes] = await Promise.all([
+      fetch('/api/settings'),
+      fetch('/api/accounts'),
+    ])
+    return {
+      settings: (await settingsRes.json()) as {
+        user: UserData
+        settings: SettingsData
+        apiKeys: ApiKeyItem[]
+      },
+      accounts: (await accountsRes.json()) as ConnectedAccount[],
+    }
+  }, [])
 
+  // Applies a loaded payload to state; called from event/timer contexts and
+  // from promise continuations — never synchronously in an effect body.
+  const applySettings = useCallback(
+    (settingsData: { user: UserData; settings: SettingsData; apiKeys: ApiKeyItem[] }, accountsData: ConnectedAccount[]) => {
       setUser(settingsData.user)
       setSettings(settingsData.settings)
       setApiKeys(settingsData.apiKeys || [])
@@ -171,16 +185,41 @@ export default function SettingsPage() {
       setProfileTimezone(settingsData.user.timezone || 'UTC')
       setNotifSettings(settingsData.settings)
       setAppearanceSettings(settingsData.settings)
+    },
+    []
+  )
+
+  // Handler entry point (refresh buttons etc.): sets state from an event.
+  const fetchSettings = useCallback(async () => {
+    try {
+      const { settings, accounts } = await loadSettings()
+      applySettings(settings, accounts)
     } catch {
       toast.error('Failed to load settings')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [loadSettings, applySettings])
 
+  // Mount-only load: every setState below runs in a promise continuation
+  // (post-await), never synchronously in the effect body.
   useEffect(() => {
-    fetchSettings()
-  }, [fetchSettings])
+    let cancelled = false
+    loadSettings()
+      .then(({ settings, accounts }) => {
+        if (cancelled) return
+        applySettings(settings, accounts)
+        setLoading(false)
+      })
+      .catch(() => {
+        if (cancelled) return
+        toast.error('Failed to load settings')
+        setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [loadSettings, applySettings])
 
   const saveProfile = async () => {
     setProfileSaving(true)

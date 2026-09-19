@@ -181,24 +181,45 @@ export default function AccountsPage() {
 
   // ── Fetch accounts ──────────────────────────────────────────────────────
 
+  // Pure data loader: no state writes, safe to drive from effects or handlers.
+  const loadAccounts = useCallback(async (): Promise<AccountData[]> => {
+    const res = await fetch('/api/accounts')
+    if (!res.ok) throw new Error('Failed to fetch accounts')
+    return (await res.json()) as AccountData[]
+  }, [])
+
+  // Handler entry point (refresh buttons etc.): sets state from an event.
   const fetchAccounts = useCallback(async () => {
+    setLoading(true)
+    setError(null)
     try {
-      setLoading(true)
-      setError(null)
-      const res = await fetch('/api/accounts')
-      if (!res.ok) throw new Error('Failed to fetch accounts')
-      const data = await res.json()
-      setAccounts(data)
+      setAccounts(await loadAccounts())
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [loadAccounts])
 
+  // Mount-only load: every setState below runs in a promise continuation
+  // (post-await), never synchronously in the effect body.
   useEffect(() => {
-    fetchAccounts()
-  }, [fetchAccounts])
+    let cancelled = false
+    loadAccounts()
+      .then((data) => {
+        if (cancelled) return
+        setAccounts(data)
+        setLoading(false)
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setError(err instanceof Error ? err.message : 'Unknown error')
+        setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [loadAccounts])
 
   // ── Handlers ────────────────────────────────────────────────────────────
 

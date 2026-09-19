@@ -151,29 +151,49 @@ export default function CompetitorPage() {
   const [searchingHint, setSearchingHint] = useState(false)
 
   // ── Fetch ──
+  // Pure data loader: no state writes, safe to drive from effects or handlers.
+  const loadCompetitors = useCallback(async (): Promise<Competitor[]> => {
+    const res = await fetch('/api/competitors')
+    if (!res.ok) throw new Error('Failed to fetch')
+    return (await res.json()) as Competitor[]
+  }, [])
+
+  // Handler entry point (refresh buttons etc.): sets state from an event.
   const fetchCompetitors = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/competitors')
-      if (!res.ok) throw new Error('Failed to fetch')
-      const data = await res.json()
-      setCompetitors(data)
+      setCompetitors(await loadCompetitors())
     } catch {
       setError('Failed to load competitors. Please try again.')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [loadCompetitors])
 
+  // Mount-only load: every setState below runs in a promise continuation
+  // (post-await), never synchronously in the effect body.
   useEffect(() => {
-    fetchCompetitors()
-  }, [fetchCompetitors])
+    let cancelled = false
+    loadCompetitors()
+      .then((data) => {
+        if (cancelled) return
+        setCompetitors(data)
+        setLoading(false)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setError('Failed to load competitors. Please try again.')
+        setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [loadCompetitors])
 
   // ── Real-time handle search ──
   useEffect(() => {
     if (!addForm.handle.trim() || addForm.handle.length < 3) {
-      setSearchHint(null)
       return
     }
     const timer = setTimeout(() => {
@@ -461,7 +481,11 @@ export default function CompetitorPage() {
                   <label htmlFor="comp-handle" className="text-sm font-medium">Username / Handle</label>
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-                    <Input id="comp-handle" placeholder="@competitor" className="pl-9" value={addForm.handle} onChange={(e) => setAddForm((f) => ({ ...f, handle: e.target.value }))} />
+                    <Input id="comp-handle" placeholder="@competitor" className="pl-9" value={addForm.handle} onChange={(e) => {
+                      const handle = e.target.value
+                      setAddForm((f) => ({ ...f, handle }))
+                      if (handle.trim().length < 3) setSearchHint(null)
+                    }} />
                     {searchingHint && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 size-4 animate-spin text-muted-foreground" />}
                   </div>
                   {searchHint && (

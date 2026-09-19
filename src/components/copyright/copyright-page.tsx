@@ -182,18 +182,31 @@ export default function CopyrightPage() {
   const togglePlatform = (key: keyof typeof platforms) => setPlatforms((prev) => ({ ...prev, [key]: !prev[key] }))
   const handleSaveSettings = () => { setSavedSettings(true); setTimeout(() => setSavedSettings(false), 3000) }
 
-  // Fetch content
-  const fetchContent = useCallback(async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const res = await fetch('/api/copyright')
-      const data = await res.json()
-      setContent(data)
-    } catch { setError('Failed to load copyright content') } finally { setLoading(false) }
+  // Pure data loader: no state writes, safe to drive from the effect below.
+  const loadContent = useCallback(async (): Promise<CopyrightContent[]> => {
+    const res = await fetch('/api/copyright')
+    return (await res.json()) as CopyrightContent[]
   }, [])
 
-  useEffect(() => { fetchContent() }, [fetchContent])
+  // Mount-only load: every setState below runs in a promise continuation
+  // (post-await), never synchronously in the effect body.
+  useEffect(() => {
+    let cancelled = false
+    loadContent()
+      .then((data) => {
+        if (cancelled) return
+        setContent(data)
+        setLoading(false)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setError('Failed to load copyright content')
+        setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [loadContent])
 
   // Register content
   const handleRegister = async () => {

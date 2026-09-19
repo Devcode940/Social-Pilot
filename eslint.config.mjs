@@ -38,6 +38,9 @@ const eslintConfig = [
     rules: {
       "react-hooks/purity": "off",
       "react-hooks/immutability": "off",
+      // Vendored carousel syncs the embla API object into state on init —
+      // upstream shadcn pattern; forking it for the rule gains nothing.
+      "react-hooks/set-state-in-effect": "off",
     },
   },
   {

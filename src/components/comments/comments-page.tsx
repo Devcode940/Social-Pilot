@@ -279,16 +279,22 @@ export default function CommentsPage() {
 
   const [extendedComments, setExtendedComments] = useState<ExtendedComment[]>([])
 
+  // Pure data loader: no state writes, safe to drive from effects or handlers.
+  const loadComments = useCallback(async (): Promise<ExtendedComment[]> => {
+    let url = '/api/comments'
+    if (filter === 'unread') url += '?isRead=false'
+
+    const res = await fetch(url)
+    if (!res.ok) throw new Error('Failed to fetch comments')
+    return (await res.json()) as ExtendedComment[]
+  }, [filter])
+
+  // Handler entry point (refresh/retry buttons etc.): sets state from an event.
   const fetchComments = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
-      let url = '/api/comments'
-      if (filter === 'unread') url += '?isRead=false'
-
-      const res = await fetch(url)
-      if (!res.ok) throw new Error('Failed to fetch comments')
-      const data = await res.json()
+      const data = await loadComments()
       setComments(data)
       setExtendedComments(data)
     } catch (err) {
@@ -297,11 +303,29 @@ export default function CommentsPage() {
     } finally {
       setLoading(false)
     }
-  }, [filter])
+  }, [loadComments])
 
+  // Reload on filter change: every setState below runs in a promise
+  // continuation (post-await), never synchronously in the effect body.
   useEffect(() => {
-    fetchComments()
-  }, [fetchComments])
+    let cancelled = false
+    loadComments()
+      .then((data) => {
+        if (cancelled) return
+        setComments(data)
+        setExtendedComments(data)
+        setLoading(false)
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        console.error('Failed to fetch comments:', err)
+        setError('Failed to load comments. Please try again.')
+        setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [loadComments])
 
   // ── Derived stats ──
   const totalComments = extendedComments.length
@@ -389,9 +413,7 @@ export default function CommentsPage() {
     currentPage * COMMENTS_PER_PAGE
   )
 
-  useEffect(() => {
-    setCurrentPage(1)
-  }, [filter, sentimentFilter, platformFilter, sortBy, search])
+
 
   // ── Selection helpers ──
   const allOnPageSelected = paginatedComments.length > 0 && paginatedComments.every((c) => selectedIds.has(c.id))
@@ -721,7 +743,7 @@ export default function CommentsPage() {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <Tabs
                 value={filter}
-                onValueChange={(v) => setFilter(v as FilterTab)}
+                onValueChange={(v) => { setFilter(v as FilterTab); setCurrentPage(1) }}
                 className="w-full sm:w-auto"
               >
                 <TabsList className="h-9 w-full sm:w-auto">
@@ -746,7 +768,7 @@ export default function CommentsPage() {
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <Select
                   value={sentimentFilter}
-                  onValueChange={(v) => setSentimentFilter(v as SentimentFilter)}
+                  onValueChange={(v) => { setSentimentFilter(v as SentimentFilter); setCurrentPage(1) }}
                 >
                   <SelectTrigger className="h-9 w-full text-xs sm:w-[140px]">
                     <SelectValue placeholder="All Sentiments" />
@@ -761,7 +783,7 @@ export default function CommentsPage() {
                 </Select>
                 <Select
                   value={platformFilter}
-                  onValueChange={(v) => setPlatformFilter(v as PlatformFilter)}
+                  onValueChange={(v) => { setPlatformFilter(v as PlatformFilter); setCurrentPage(1) }}
                 >
                   <SelectTrigger className="h-9 w-full text-xs sm:w-[140px]">
                     <SelectValue placeholder="All Platforms" />
@@ -781,7 +803,7 @@ export default function CommentsPage() {
                   <Input
                     placeholder="Search comments..."
                     value={search}
-                    onChange={(e) => setSearch(e.target.value)}
+                    onChange={(e) => { setSearch(e.target.value); setCurrentPage(1) }}
                     className="h-9 pl-8 text-xs"
                   />
                 </div>
@@ -791,7 +813,7 @@ export default function CommentsPage() {
             {/* Sort + Bulk Actions Row */}
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2 flex-wrap">
-                <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
+                <Select value={sortBy} onValueChange={(v) => { setSortBy(v as SortOption); setCurrentPage(1) }}>
                   <SelectTrigger className="h-8 w-full text-xs sm:w-[150px]">
                     <ArrowUpDown className="h-3 w-3 mr-1.5" />
                     <SelectValue />

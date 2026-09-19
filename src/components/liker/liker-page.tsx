@@ -186,24 +186,46 @@ export default function LikerPage() {
 
   // ── Fetch campaigns ──────────────────────────────────────────────────────
 
+  // Pure data loader: no state writes, safe to drive from effects or handlers.
+  const loadCampaigns = useCallback(async (): Promise<Campaign[]> => {
+    const res = await fetch('/api/campaigns')
+    if (!res.ok) throw new Error('Failed to fetch campaigns')
+    const data = (await res.json()) as Record<string, unknown>[]
+    return data.map(mapCampaign)
+  }, [])
+
+  // Handler entry point (refresh buttons etc.): sets state from an event.
   const fetchCampaigns = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
-      const res = await fetch('/api/campaigns')
-      if (!res.ok) throw new Error('Failed to fetch campaigns')
-      const data = await res.json()
-      setCampaigns(data.map(mapCampaign))
+      setCampaigns(await loadCampaigns())
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [loadCampaigns])
 
+  // Mount-only load: every setState below runs in a promise continuation
+  // (post-await), never synchronously in the effect body.
   useEffect(() => {
-    fetchCampaigns()
-  }, [fetchCampaigns])
+    let cancelled = false
+    loadCampaigns()
+      .then((data) => {
+        if (cancelled) return
+        setCampaigns(data)
+        setLoading(false)
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setError(err instanceof Error ? err.message : 'Unknown error')
+        setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [loadCampaigns])
 
   // ── Create campaign ──────────────────────────────────────────────────────
 

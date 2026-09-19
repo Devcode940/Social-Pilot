@@ -106,24 +106,45 @@ export default function HashtagsPage() {
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set())
 
   // ── Fetch saved sets ──
+  // Pure data loader: no state writes, safe to drive from effects or handlers.
+  const loadHashtagSets = useCallback(async (): Promise<SavedHashtagSet[]> => {
+    const res = await fetch('/api/hashtags')
+    if (!res.ok) throw new Error('Failed to fetch')
+    return (await res.json()) as SavedHashtagSet[]
+  }, [])
+
+  // Handler entry point (refresh buttons etc.): sets state from an event.
   const fetchHashtagSets = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/hashtags')
-      if (!res.ok) throw new Error('Failed to fetch')
-      const data = await res.json()
-      setHashtagSets(data)
+      setHashtagSets(await loadHashtagSets())
     } catch {
       setError('Failed to load hashtag sets.')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [loadHashtagSets])
 
+  // Mount-only load: every setState below runs in a promise continuation
+  // (post-await), never synchronously in the effect body.
   useEffect(() => {
-    fetchHashtagSets()
-  }, [fetchHashtagSets])
+    let cancelled = false
+    loadHashtagSets()
+      .then((data) => {
+        if (cancelled) return
+        setHashtagSets(data)
+        setLoading(false)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setError('Failed to load hashtag sets.')
+        setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [loadHashtagSets])
 
   // ── Search trending hashtags via web search ──
   const handleSearch = useCallback(async (query?: string) => {

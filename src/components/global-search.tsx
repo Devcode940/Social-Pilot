@@ -86,25 +86,26 @@ export function GlobalSearch() {
   const inputRef = useRef<HTMLInputElement>(null)
   const setCurrentPage = useAppStore((s) => s.setCurrentPage)
 
+  // Sole entry point for opening the dialog: resets search state up front
+  // (event context) instead of syncing it in an effect keyed on `open`.
+  const openDialog = useCallback(() => {
+    setRecentSearches(getRecentSearches())
+    setQuery('')
+    setResults([])
+    setOpen(true)
+  }, [])
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault()
-        setOpen((prev) => !prev)
+        if (open) setOpen(false)
+        else openDialog()
       }
     }
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [])
-
-  useEffect(() => {
-    if (open) {
-      setRecentSearches(getRecentSearches())
-      setQuery('')
-      setResults([])
-      setTimeout(() => inputRef.current?.focus(), 50)
-    }
-  }, [open])
+  }, [open, openDialog])
 
   const performSearch = useCallback(async (searchQuery: string) => {
     if (!searchQuery.trim()) {
@@ -164,6 +165,7 @@ export function GlobalSearch() {
           <Search className="mr-2 size-4 shrink-0 text-muted-foreground" />
           <Input
             ref={inputRef}
+            autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search posts, campaigns, competitors, hashtags..."

@@ -727,24 +727,47 @@ export default function CalendarPage() {
   const currentYear = currentDate.getFullYear()
   const currentMonth = currentDate.getMonth() + 1
 
+  // Pure data loader: no state writes, safe to drive from effects or handlers.
+  // Returns null on non-OK responses (caller keeps previous posts), matching
+  // the original semantics.
+  const loadPosts = useCallback(async (): Promise<Post[] | null> => {
+    const res = await fetch('/api/posts')
+    if (!res.ok) return null
+    return (await res.json()) as Post[]
+  }, [])
+
+  // Handler entry point (refresh buttons etc.): sets state from an event.
   const fetchPosts = useCallback(async () => {
     try {
       setLoading(true)
-      const res = await fetch('/api/posts')
-      if (res.ok) {
-        const data = await res.json()
-        setPosts(data)
-      }
+      const data = await loadPosts()
+      if (data) setPosts(data)
     } catch (err) {
       console.error('Failed to fetch posts:', err)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [loadPosts])
 
+  // Mount-only load: every setState below runs in a promise continuation
+  // (post-await), never synchronously in the effect body.
   useEffect(() => {
-    fetchPosts()
-  }, [fetchPosts])
+    let cancelled = false
+    loadPosts()
+      .then((data) => {
+        if (cancelled) return
+        if (data) setPosts(data)
+        setLoading(false)
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        console.error('Failed to fetch posts:', err)
+        setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [loadPosts])
 
   const handleDeletePost = useCallback(async (id: string) => {
     try {

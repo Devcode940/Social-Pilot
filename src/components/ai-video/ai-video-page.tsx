@@ -175,26 +175,33 @@ export default function AIVideoPage() {
   const [error, setError] = useState('')
   const [activeTab, setActiveTab] = useState('create')
 
-  const fetchHistory = useCallback(async () => {
-    setLoading(true)
-    try {
-      const res = await fetch('/api/media')
-      const data = await res.json()
-      const exported = data.filter((item: HistoryItem) => item.status === 'exported')
-      setHistoryItems(exported)
-    } catch {
-      setError('Failed to load history')
-    } finally {
-      setLoading(false)
-    }
+  // Pure data loader: no state writes, safe to drive from the effect below.
+  const loadHistoryItems = useCallback(async (): Promise<HistoryItem[]> => {
+    const res = await fetch('/api/media')
+    const data = (await res.json()) as HistoryItem[]
+    return data.filter((item) => item.status === 'exported')
   }, [])
 
-  // Fetch history when tab changes to 'history'
+  // Fetch history when tab changes to 'history': every setState below runs in
+  // a promise continuation (post-await), never synchronously in the effect.
   useEffect(() => {
-    if (activeTab === 'history') {
-      fetchHistory()
+    if (activeTab !== 'history') return
+    let cancelled = false
+    loadHistoryItems()
+      .then((exported) => {
+        if (cancelled) return
+        setHistoryItems(exported)
+        setLoading(false)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setError('Failed to load history')
+        setLoading(false)
+      })
+    return () => {
+      cancelled = true
     }
-  }, [activeTab, fetchHistory])
+  }, [activeTab, loadHistoryItems])
 
   const handleEnhancePrompt = useCallback(() => {
     if (!prompt.trim()) return
@@ -375,7 +382,7 @@ export default function AIVideoPage() {
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+      <Tabs value={activeTab} onValueChange={(v) => { if (v === 'history') setLoading(true); setActiveTab(v) }} className="space-y-4">
         <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4">
           <TabsTrigger value="create" className="gap-1.5">
             <Wand2 className="size-3.5" />
